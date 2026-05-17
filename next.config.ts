@@ -10,10 +10,11 @@ const nextConfig: NextConfig = {
             key: "Cross-Origin-Opener-Policy",
             value: "same-origin",
           },
-          {
-            key: "Cross-Origin-Embedder-Policy",
-            value: "require-corp",
-          },
+          // COEP disabled until we enable pthreads/SharedArrayBuffer
+          // {
+          //   key: "Cross-Origin-Embedder-Policy",
+          //   value: "require-corp",
+          // },
         ],
       },
     ];
