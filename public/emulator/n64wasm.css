@@ -17,6 +17,12 @@
 
 * { box-sizing: border-box; }
 
+/* Hide header/footer when embedded in iframe */
+@media all {
+  .n64-embedded .n64-header,
+  .n64-embedded .n64-footer { display: none !important; }
+}
+
 body {
   background: var(--n64-bg);
   color: var(--n64-text);
