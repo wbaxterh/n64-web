@@ -1,0 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --n64-green: #00ff41;
+  --n64-green-dim: #00cc33;
+  --n64-yellow: #ffcc00;
+  --n64-red: #ff3333;
+  --n64-blue: #4488ff;
+  --n64-purple: #8844ff;
+  --n64-bg: #0a0a14;
+  --n64-surface: #12122a;
+  --n64-border: rgba(0, 255, 65, 0.25);
+  --n64-text: #c0c0c0;
+}
