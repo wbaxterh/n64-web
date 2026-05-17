@@ -1,0 +1,623 @@
+/* N64.wasm — Retro Terminal UI */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --n64-green: #00ff41;
+  --n64-green-dim: #00cc33;
+  --n64-yellow: #ffcc00;
+  --n64-red: #ff3333;
+  --n64-blue: #4488ff;
+  --n64-purple: #8844ff;
+  --n64-bg: #0a0a14;
+  --n64-surface: #12122a;
+  --n64-border: rgba(0, 255, 65, 0.25);
+  --n64-text: #c0c0c0;
+  --n64-text-bright: #e0e0e0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--n64-bg);
+  color: var(--n64-text);
+  font-family: 'JetBrains Mono', monospace;
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* =========== HEADER =========== */
+.n64-header {
+  text-align: center;
+  padding: 24px 16px 16px;
+  border-bottom: 2px solid var(--n64-green);
+  background: linear-gradient(180deg, #0a0a14, #0d0d1a);
+}
+
+.n64-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  color: var(--n64-green);
+  text-shadow: 0 0 20px rgba(0,255,65,0.4), 0 0 60px rgba(0,255,65,0.1);
+  margin: 0 0 4px;
+  letter-spacing: 2px;
+}
+
+.n64-subtitle {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  color: var(--n64-yellow);
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  opacity: 0.7;
+}
+
+/* =========== TOOLBAR =========== */
+.n64-toolbar {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--n64-surface);
+  border-bottom: 1px solid var(--n64-border);
+  flex-wrap: wrap;
+}
+
+.n64-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 14px;
+  background: transparent;
+  color: var(--n64-green);
+  border: 1px solid var(--n64-green);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+}
+
+.n64-btn:hover {
+  background: rgba(0,255,65,0.1);
+  box-shadow: 0 0 10px rgba(0,255,65,0.2);
+  text-shadow: 0 0 8px rgba(0,255,65,0.5);
+}
+
+.n64-btn:active {
+  background: rgba(0,255,65,0.2);
+}
+
+.n64-btn--yellow {
+  color: var(--n64-yellow);
+  border-color: var(--n64-yellow);
+}
+.n64-btn--yellow:hover {
+  background: rgba(255,204,0,0.1);
+  box-shadow: 0 0 10px rgba(255,204,0,0.2);
+}
+
+.n64-btn--red {
+  color: var(--n64-red);
+  border-color: var(--n64-red);
+}
+.n64-btn--red:hover {
+  background: rgba(255,51,51,0.1);
+}
+
+.n64-btn--filled {
+  background: var(--n64-green);
+  color: #000;
+}
+.n64-btn--filled:hover {
+  background: #33ff66;
+  box-shadow: 0 0 15px rgba(0,255,65,0.4);
+}
+
+/* =========== CANVAS AREA =========== */
+#canvasDiv {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #000;
+  min-height: 200px;
+}
+
+#canvas {
+  image-rendering: pixelated;
+  max-width: 100%;
+}
+
+/* =========== DROP ZONE =========== */
+.n64-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 500px;
+  margin: 60px auto;
+  padding: 60px 40px;
+  border: 2px dashed var(--n64-green);
+  background: rgba(0,255,65,0.02);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.n64-dropzone:hover, .n64-dropzone.dragover {
+  border-color: var(--n64-yellow);
+  background: rgba(255,204,0,0.03);
+  box-shadow: 0 0 30px rgba(0,255,65,0.08);
+}
+
+.n64-dropzone__icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.n64-dropzone__text {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 14px;
+  color: var(--n64-green);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.n64-dropzone__hint {
+  font-size: 11px;
+  color: rgba(255,255,255,0.3);
+}
+
+/* =========== FPS HUD =========== */
+.n64-hud {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: var(--n64-green);
+  opacity: 0.6;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* =========== GAMEPAD STATUS =========== */
+.n64-gamepad-status {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--n64-border);
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+}
+
+.n64-gamepad-status--connected {
+  color: var(--n64-green);
+  border-color: var(--n64-green);
+}
+
+.n64-gamepad-status--none {
+  color: rgba(255,255,255,0.3);
+  border-color: rgba(255,255,255,0.1);
+}
+
+/* =========== MODAL OVERRIDES =========== */
+.modal-content {
+  background: var(--n64-surface) !important;
+  border: 2px solid var(--n64-green) !important;
+  border-radius: 0 !important;
+  color: var(--n64-text) !important;
+  box-shadow: 0 0 40px rgba(0,255,65,0.1);
+}
+
+.modal-header {
+  border-bottom: 1px solid var(--n64-border) !important;
+}
+
+.modal-header .modal-title {
+  font-family: 'Orbitron', sans-serif !important;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--n64-green) !important;
+  font-size: 14px;
+}
+
+.modal-header .close {
+  color: var(--n64-red) !important;
+  text-shadow: none !important;
+  opacity: 1;
+}
+
+.modal-footer {
+  border-top: 1px solid var(--n64-border) !important;
+}
+
+/* =========== FORM OVERRIDES =========== */
+.form-control, .form-control:focus, .form-control:disabled {
+  background: #0a0a14 !important;
+  color: var(--n64-green) !important;
+  border: 1px solid var(--n64-border) !important;
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 12px !important;
+}
+
+.form-control:focus {
+  box-shadow: 0 0 0 2px rgba(0,255,65,0.15) !important;
+}
+
+select.form-control {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2300ff41' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 8px center !important;
+  padding-right: 28px !important;
+}
+
+/* =========== TABLE OVERRIDES =========== */
+.table {
+  color: var(--n64-text) !important;
+}
+
+.table th {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--n64-yellow) !important;
+  border-color: var(--n64-border) !important;
+}
+
+.table td {
+  border-color: var(--n64-border) !important;
+  vertical-align: middle !important;
+}
+
+/* =========== BUTTON OVERRIDES =========== */
+.btn-primary {
+  background: transparent !important;
+  color: var(--n64-green) !important;
+  border: 1px solid var(--n64-green) !important;
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1px !important;
+}
+
+.btn-primary:hover, .btn-primary:focus {
+  background: rgba(0,255,65,0.1) !important;
+  box-shadow: 0 0 10px rgba(0,255,65,0.2) !important;
+  color: var(--n64-green) !important;
+  border-color: var(--n64-green) !important;
+}
+
+.btn-secondary {
+  background: transparent !important;
+  color: var(--n64-text) !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+.btn-success {
+  background: var(--n64-green) !important;
+  color: #000 !important;
+  border: 1px solid var(--n64-green) !important;
+  border-radius: 0 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+.btn-danger {
+  background: transparent !important;
+  color: var(--n64-red) !important;
+  border: 1px solid var(--n64-red) !important;
+  border-radius: 0 !important;
+}
+
+/* =========== NAV TABS OVERRIDES =========== */
+.nav-tabs {
+  border-bottom-color: var(--n64-border) !important;
+}
+
+.nav-tabs .nav-link {
+  color: var(--n64-text) !important;
+  border-radius: 0 !important;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-link:hover {
+  color: var(--n64-green) !important;
+  border-color: var(--n64-border) var(--n64-border) transparent !important;
+  background: var(--n64-surface) !important;
+}
+
+/* =========== ALERT OVERRIDES =========== */
+.alert-info {
+  background: rgba(0,102,255,0.08) !important;
+  border: 1px solid var(--n64-blue) !important;
+  color: var(--n64-blue) !important;
+  border-radius: 0 !important;
+  font-size: 12px;
+}
+
+.alert-danger {
+  background: rgba(255,51,51,0.08) !important;
+  border: 1px solid var(--n64-red) !important;
+  color: var(--n64-red) !important;
+  border-radius: 0 !important;
+}
+
+/* =========== DROPDOWN OVERRIDES =========== */
+.dropdown-menu {
+  background: var(--n64-surface) !important;
+  border: 1px solid var(--n64-border) !important;
+  border-radius: 0 !important;
+}
+
+.dropdown-item {
+  color: var(--n64-text) !important;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.dropdown-item:hover {
+  background: rgba(0,255,65,0.08) !important;
+  color: var(--n64-green) !important;
+}
+
+/* =========== CARD OVERRIDES =========== */
+.card {
+  background: var(--n64-surface) !important;
+  border: 1px solid var(--n64-border) !important;
+  border-radius: 0 !important;
+}
+
+.card-body {
+  background: var(--n64-surface) !important;
+  color: var(--n64-text) !important;
+}
+
+.card-title {
+  font-family: 'Orbitron', sans-serif;
+  color: var(--n64-yellow) !important;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* =========== CHECKBOX OVERRIDES =========== */
+input[type="checkbox"] {
+  accent-color: var(--n64-green);
+}
+
+input[type="radio"] {
+  accent-color: var(--n64-green);
+}
+
+label {
+  color: var(--n64-text) !important;
+  font-size: 12px;
+}
+
+/* =========== FOOTER =========== */
+.n64-footer {
+  text-align: center;
+  padding: 16px;
+  border-top: 1px solid var(--n64-border);
+  margin-top: 20px;
+}
+
+.n64-footer a {
+  color: rgba(255,255,255,0.3);
+  text-decoration: none;
+  font-size: 11px;
+  transition: color 0.15s;
+}
+
+.n64-footer a:hover {
+  color: var(--n64-green);
+}
+
+/* =========== MAIN CONTAINER =========== */
+#maindiv {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+h1 { display: none; } /* hide old title */
+
+/* =========== DROP AREA OVERRIDE =========== */
+#dropArea {
+  width: 100% !important;
+  max-width: 500px !important;
+  height: auto !important;
+  min-height: 200px !important;
+  border: 2px dashed var(--n64-green) !important;
+  background: rgba(0,255,65,0.02) !important;
+  color: var(--n64-green) !important;
+  font-family: 'Orbitron', sans-serif !important;
+  font-size: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-direction: column !important;
+  padding: 40px !important;
+  transition: all 0.2s !important;
+  cursor: pointer;
+}
+
+#dropArea:hover {
+  border-color: var(--n64-yellow) !important;
+  background: rgba(255,204,0,0.03) !important;
+}
+
+/* =========== MOBILE OVERRIDES =========== */
+#mobileButtons {
+  background: var(--n64-surface) !important;
+}
+
+.start-z-button {
+  background: var(--n64-surface) !important;
+  color: var(--n64-text) !important;
+  border: 1px solid var(--n64-border) !important;
+}
+
+.b-a-button {
+  background: rgba(0,255,65,0.08) !important;
+  color: var(--n64-green) !important;
+  border: 1px solid var(--n64-border) !important;
+}
+
+.buttonhold {
+  background: rgba(0,255,65,0.2) !important;
+}
+
+.touchsurface {
+  color: rgba(255,255,255,0.2) !important;
+  background: var(--n64-bg) !important;
+}
+
+#mobileBottomPanel {
+  background: var(--n64-bg) !important;
+}
+
+/* =========== GITHUB LINK =========== */
+.github-link {
+  color: rgba(255,255,255,0.3) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+}
+.github-link:hover {
+  color: var(--n64-green) !important;
+}
+.githubSvg {
+  color: rgba(255,255,255,0.3) !important;
+  height: 16px !important;
+  width: 16px !important;
+}
+.github-link:hover .githubSvg {
+  color: var(--n64-green) !important;
+}
+
+/* =========== SCROLLBAR =========== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--n64-bg); }
+::-webkit-scrollbar-thumb { background: var(--n64-green); }
+::-webkit-scrollbar-thumb:hover { background: var(--n64-yellow); }
+
+/* =========== GAMEPAD WIZARD =========== */
+.n64-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.n64-wizard {
+  background: var(--n64-surface);
+  border: 2px solid var(--n64-green);
+  padding: 40px;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(0,255,65,0.15);
+}
+
+.n64-wizard__title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  color: var(--n64-green);
+  margin-bottom: 8px;
+}
+
+.n64-wizard__subtitle {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 30px;
+}
+
+.n64-wizard__prompt {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 18px;
+  color: var(--n64-yellow);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 12px;
+  animation: n64-pulse 1.5s ease-in-out infinite;
+}
+
+.n64-wizard__mapped {
+  font-size: 11px;
+  color: var(--n64-green);
+  margin-top: 4px;
+}
+
+.n64-wizard__progress {
+  width: 100%;
+  height: 3px;
+  background: rgba(255,255,255,0.1);
+  margin-top: 24px;
+}
+
+.n64-wizard__progress-bar {
+  height: 100%;
+  background: var(--n64-green);
+  transition: width 0.3s;
+}
+
+.n64-wizard__skip {
+  margin-top: 16px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  cursor: pointer;
+}
+
+.n64-wizard__skip:hover {
+  color: var(--n64-text);
+}
+
+@keyframes n64-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* =========== MISC =========== */
+.text-muted {
+  color: rgba(255,255,255,0.3) !important;
+}
+
+.close span {
+  color: var(--n64-red);
+}
+
+/* Hide Bootstrap's default focus glow */
+.btn:focus, .btn.focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
