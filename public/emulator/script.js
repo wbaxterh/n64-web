@@ -235,9 +235,10 @@ class MyClass {
             FS.writeFile('custom.v64',byteArray);
             this.beforeRun();
             this.WriteConfigFile();
-            this.initAudio(); //need to initAudio before next call for iOS to work
+            this.setRemainingAudio = Module.cwrap('neil_set_buffer_remaining', null, ['number']);
             await this.LoadSram();
             Module.callMain(['custom.v64']);
+            this.initAudio(); // init after callMain so Module.HEAP16 is available
             this.findInDatabase();
             this.configureEmulator();
             $('#canvasDiv').show();
@@ -245,7 +246,6 @@ class MyClass {
             this.showToast = Module.cwrap('neil_toast_message', null, ['string']);
             this.toggleFPSModule = Module.cwrap('toggleFPS', null, ['number']);
             this.sendMobileControls = Module.cwrap('neil_send_mobile_controls', null, ['string','string','string']);
-            this.setRemainingAudio = Module.cwrap('neil_set_buffer_remaining', null, ['number']);
             this.setDoubleSpeed = Module.cwrap('neil_set_double_speed', null, ['number']);
         }
 
@@ -289,30 +289,154 @@ class MyClass {
             this.audioInited = true;
             this.audioContext = new AudioContext({
                 latencyHint: 'interactive',
-                sampleRate: 44100, //this number has to match what's in gui.cpp
+                sampleRate: 44100,
             });
             this.gainNode = this.audioContext.createGain();
             this.gainNode.gain.value = 0.5;
             this.gainNode.connect(this.audioContext.destination);
-    
-            //point at where the emulator is storing the audio buffer
-            this.audioBufferResampled = new Int16Array(Module.HEAP16.buffer,Module._neilGetSoundBufferResampledAddress(),64000);
-    
+
+            // With pthreads, heap views are module-scoped. Use exported wasmMemory.
+            var heapBuffer = Module.wasmMemory.buffer;
+            this.audioBufferResampled = new Int16Array(heapBuffer, Module._neilGetSoundBufferResampledAddress(), 64000);
+
             this.audioWritePosition = 0;
             this.audioReadPosition = 0;
             this.audioBackOffCounter = 0;
             this.audioThreadLock = false;
-    
-    
-            //emulator is synced to the OnAudioProcess event because it's way
-            //more accurate than emscripten_set_main_loop or RAF
-            //and the old method was having constant emulator slowdown swings
-            //so the audio suffered as a result
+
+            // Always start with ScriptProcessorNode (proven, synchronous setup)
             this.pcmPlayer = this.audioContext.createScriptProcessor(AUDIOBUFFSIZE, 2, 2);
             this.pcmPlayer.onaudioprocess = this.AudioProcessRecurring.bind(this);
             this.pcmPlayer.connect(this.gainNode);
+            console.log('Audio: ScriptProcessorNode active');
+
+            // Try to upgrade to AudioWorklet in the background
+            if (window.AudioWorkletNode && window.SharedArrayBuffer && window.crossOriginIsolated) {
+                this.upgradeToAudioWorklet();
+            }
         }
 
+    }
+
+    async upgradeToAudioWorklet() {
+        try {
+            await this.initAudioWorklet();
+            // Disconnect old ScriptProcessor, worklet takes over
+            this.pcmPlayer.disconnect();
+            this.pcmPlayer.onaudioprocess = null;
+            console.log('Audio: Upgraded to AudioWorklet (dedicated thread)');
+        } catch(e) {
+            console.warn('AudioWorklet upgrade failed, keeping ScriptProcessor:', e);
+        }
+    }
+
+    async initAudioWorklet() {
+        // Ring buffer capacity: 64000 interleaved i16 samples (same as WASM buffer)
+        const RING_CAPACITY = 64000;
+
+        // SharedArrayBuffer for the ring buffer (i16 samples)
+        this.sharedRingBuffer = new SharedArrayBuffer(RING_CAPACITY * 2); // i16 = 2 bytes each
+        // SharedArrayBuffer for control: writeHead (4 bytes) + readHead (4 bytes)
+        this.sharedControlBuffer = new SharedArrayBuffer(8);
+        this.sharedRingView = new Int16Array(this.sharedRingBuffer);
+        this.workletWriteHead = new Int32Array(this.sharedControlBuffer, 0, 1);
+        this.workletReadHead = new Int32Array(this.sharedControlBuffer, 4, 1);
+        this.ringCapacity = RING_CAPACITY;
+
+        // Load the AudioWorklet processor
+        await this.audioContext.audioWorklet.addModule('audio-worklet.js');
+
+        // Create the worklet node
+        this.workletNode = new AudioWorkletNode(this.audioContext, 'n64-audio-processor', {
+            outputChannelCount: [2],
+        });
+        this.workletNode.connect(this.gainNode);
+
+        // Send shared buffers to the worklet
+        this.workletNode.port.postMessage({
+            type: 'init',
+            ringBuffer: this.sharedRingBuffer,
+            controlBuffer: this.sharedControlBuffer,
+            capacity: RING_CAPACITY,
+        });
+
+        // Listen for underrun reports
+        this.workletNode.port.onmessage = (e) => {
+            if (e.data.type === 'underrun') {
+                this.rivetsData.audioSkipCount = e.data.count;
+            }
+        };
+
+        this.useAudioWorklet = true;
+
+        // Start the emulation pump — feeds samples from WASM heap into shared ring buffer
+        this.startWorkletPump();
+    }
+
+    startWorkletPump() {
+        // This replaces the ScriptProcessorNode-driven emulation loop.
+        // We use a high-frequency timer to pump audio from the WASM heap
+        // into the shared ring buffer, and drive emulation.
+        const pump = () => {
+            if (this.rivetsData.beforeEmulatorStarted) {
+                requestAnimationFrame(pump);
+                return;
+            }
+
+            if (this.rivetsData.disableAudioSync) {
+                // Audio sync disabled — just copy whatever's available
+                this.pumpSamplesToWorklet();
+            } else {
+                // Audio-driven emulation: run emulator, then copy samples
+                Module._runMainLoop();
+                this.pumpSamplesToWorklet();
+
+                // Run again if buffer is low
+                const available = this.getWorkletBufferLevel();
+                if (available < AUDIOBUFFSIZE * 2) {
+                    Module._runMainLoop();
+                    this.pumpSamplesToWorklet();
+                }
+            }
+
+            requestAnimationFrame(pump);
+        };
+        requestAnimationFrame(pump);
+    }
+
+    pumpSamplesToWorklet() {
+        // Copy new samples from WASM heap ring buffer into SharedArrayBuffer ring buffer
+        this.audioWritePosition = Module._neilGetAudioWritePosition();
+
+        while (this.audioReadPosition !== this.audioWritePosition) {
+            const writePos = Atomics.load(this.workletWriteHead, 0);
+            const readPos = Atomics.load(this.workletReadHead, 0);
+
+            // Check if ring buffer is full
+            let nextWrite = writePos + 2;
+            if (nextWrite >= this.ringCapacity) nextWrite = 0;
+            if (nextWrite === readPos) break; // buffer full, stop
+
+            // Copy L,R sample pair
+            this.sharedRingView[writePos] = this.audioBufferResampled[this.audioReadPosition];
+            this.sharedRingView[writePos + 1] = this.audioBufferResampled[this.audioReadPosition + 1];
+
+            Atomics.store(this.workletWriteHead, 0, nextWrite);
+
+            this.audioReadPosition += 2;
+            if (this.audioReadPosition >= 64000) this.audioReadPosition = 0;
+        }
+
+        // Report remaining buffer to WASM for pacing
+        const remaining = this.getWorkletBufferLevel();
+        this.setRemainingAudio(remaining);
+    }
+
+    getWorkletBufferLevel() {
+        const write = Atomics.load(this.workletWriteHead, 0);
+        const read = Atomics.load(this.workletReadHead, 0);
+        if (write >= read) return write - read;
+        return this.ringCapacity - read + write;
     }
 
     hasEnoughSamples(){

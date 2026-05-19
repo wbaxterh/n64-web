@@ -51,14 +51,17 @@ class GamepadWizard {
   promptOnConnect() {
     window.addEventListener('gamepadconnected', (e) => {
       console.log(`Gamepad connected: ${e.gamepad.id}`);
+      document.body.classList.add('n64-gamepad-connected');
       const saved = localStorage.getItem('n64wasm-gamepad-mapping');
       if (!saved) {
-        // Show a prompt to map
         setTimeout(() => this.showConnectPrompt(e.gamepad), 500);
       } else {
         this.applyMapping(JSON.parse(saved));
         this.showStatus(e.gamepad, true);
       }
+    });
+    window.addEventListener('gamepaddisconnected', () => {
+      document.body.classList.remove('n64-gamepad-connected');
     });
   }
 

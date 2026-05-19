@@ -17,12 +17,6 @@
 
 * { box-sizing: border-box; }
 
-/* Hide header/footer when embedded in iframe */
-@media all {
-  .n64-embedded .n64-header,
-  .n64-embedded .n64-footer { display: none !important; }
-}
-
 body {
   background: var(--n64-bg);
   color: var(--n64-text);
@@ -611,6 +605,116 @@ h1 { display: none; } /* hide old title */
 @keyframes n64-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+/* =========== KEYBOARD CONTROLS BUTTON =========== */
+
+.n64-kb-btn {
+  display: inline-block;
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 14px;
+  background: transparent;
+  color: rgba(255,255,255,0.35);
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  transition: all 0.15s;
+}
+
+.n64-kb-btn:hover {
+  color: var(--n64-yellow);
+  border-color: var(--n64-yellow);
+  background: rgba(255,204,0,0.05);
+}
+
+/* =========== KEYBOARD CONTROLS OVERLAY =========== */
+
+.n64-kb-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.n64-kb-panel {
+  background: var(--n64-surface);
+  border: 2px solid var(--n64-green);
+  padding: 30px 36px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 0 60px rgba(0,255,65,0.12);
+}
+
+.n64-kb-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: var(--n64-green);
+  text-align: center;
+  margin-bottom: 24px;
+  text-shadow: 0 0 15px rgba(0,255,65,0.3);
+}
+
+.n64-kb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 30px;
+}
+
+.n64-kb-section-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px;
+  color: var(--n64-yellow);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255,204,0,0.15);
+}
+
+.n64-kb-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.n64-kb-row span {
+  color: rgba(255,255,255,0.5);
+  font-size: 10px;
+}
+
+.n64-kb-row kbd {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 2px 7px;
+  background: rgba(0,255,65,0.08);
+  border: 1px solid rgba(0,255,65,0.25);
+  color: var(--n64-green);
+  margin-right: 4px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.n64-kb-hint {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 9px;
+  color: rgba(255,255,255,0.2);
+}
+
+/* Hide keyboard controls button when gamepad connected */
+.n64-gamepad-connected .n64-kb-btn {
+  display: none;
 }
 
 /* =========== MISC =========== */
