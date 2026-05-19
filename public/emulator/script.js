@@ -849,6 +849,10 @@ class MyClass {
         let files = dt.files;
 
         var file = files[0];
+
+        // Add to game library if available
+        if (window.gameLibrary) gameLibrary.addFiles([file]);
+
         myClass.rom_name = file.name;
         console.log(file);
         var reader = new FileReader();
@@ -862,6 +866,19 @@ class MyClass {
         }
         reader.readAsArrayBuffer(file);
 
+    }
+
+    /**
+     * Load a ROM file (called by game library or external code)
+     */
+    loadFile(file) {
+        myClass.rom_name = file.name;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var byteArray = new Uint8Array(this.result);
+            myClass.LoadEmulator(byteArray);
+        }
+        reader.readAsArrayBuffer(file);
     }
 
     extractRomName(name){
