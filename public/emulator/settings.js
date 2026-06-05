@@ -6,5 +6,5 @@ var N64WASMSETTINGS = {
     // Get one at: https://console.cloud.google.com/apis/credentials
     // Required APIs: Drive API, Picker API
     // Authorized origins: https://play.weshuber.com, http://localhost:8064
-    GOOGLE_CLIENT_ID: "" // e.g. "123456789.apps.googleusercontent.com"
+    GOOGLE_CLIENT_ID: "624774098704-j2q01j9g7pj41f8poqbvkvho9f7v3mco.apps.googleusercontent.com"
 }
