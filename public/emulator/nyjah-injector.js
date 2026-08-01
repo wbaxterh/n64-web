@@ -37,16 +37,22 @@
   function r32(a) { return dv.getUint32(P(a), true) >>> 0; }
   function w32(a, v) { dv.setUint32(P(a), v >>> 0, true); }
 
-  // Preferred: exported accessor (needs the n64-wasm rebuild). Fallback: scan
-  // the heap for the boot signature — works with the STOCK wasm, no rebuild.
-  function locateRdram(Module) {
-    if (typeof Module._neilGetRdramBase === 'function') {
+  // Scanning the full 512MB heap in one frame freezes the tab, so the boot-
+  // signature search runs in bounded CHUNKS across frames — a few ms each.
+  var frames = 0, scanCursor = 0, gaveUp = false;
+  var CHUNK = 1 << 21;   // ~2M words (~8MB) per frame
+
+  // One chunked scan step. Returns the RDRAM base if found this step, else 0.
+  function scanStep(Module) {
+    if (typeof Module._neilGetRdramBase === 'function') {   // fast path if rebuilt
       var b = Module._neilGetRdramBase() >>> 0;
       if (b) return b;
     }
-    if (!heap32) heap32 = new Uint32Array(Module.wasmMemory.buffer);
-    var n = heap32.length - BOOT_SIG.length, s0 = BOOT_SIG[0] >>> 0;
-    for (var i = 0; i < n; i++) {
+    if (!heap32) { heap32 = new Uint32Array(Module.wasmMemory.buffer); scanCursor = 0; }
+    var n = heap32.length - BOOT_SIG.length;
+    var s0 = BOOT_SIG[0] >>> 0;
+    var end = Math.min(scanCursor + CHUNK, n);
+    for (var i = scanCursor; i < end; i++) {
       if (heap32[i] === s0) {
         var ok = true;
         for (var k = 1; k < BOOT_SIG.length; k++) {
@@ -55,19 +61,21 @@
         if (ok) return (i * 4 - 0x400) >>> 0;   // boot sig sits at RDRAM 0x400
       }
     }
-    return 0; // ROM not booted into RDRAM yet — retry next frame
+    scanCursor = end;
+    if (scanCursor >= n) { scanCursor = 0; }     // wrap (ROM may not be in RAM yet)
+    return 0;
   }
 
-  var frames = 0, scanTries = 0;
-
   function apply(Module) {
-    // Lazily locate RDRAM once the ROM has booted into it (retry each frame).
+    // Lazily locate RDRAM once the ROM has booted (chunked, non-blocking).
     if (!ready) {
-      if (++frames < 8) return;                 // let the IPL DMA the ROM in
-      if (scanTries > 600) return;              // give up after ~10s of frames
-      scanTries++;
-      base = locateRdram(Module);
-      if (!base) return;
+      if (gaveUp) return;
+      if (++frames < 30) return;                 // let the IPL DMA the ROM in first
+      base = scanStep(Module);                    // bounded work this frame
+      if (!base) {
+        if (frames > 3000) { gaveUp = true; console.warn('[NyjahInjector] RDRAM not found — idle.'); }
+        return;
+      }
       console.log('[NyjahInjector] RDRAM located at heap offset 0x' + base.toString(16) + ' — cap active.');
       ready = true;
     }
@@ -95,6 +103,12 @@
 
   function install(Module) {
     try {
+      // Escape hatch: set window.NYJAH_DISABLE = true (or ?nonyjah in the URL)
+      // to run the stock emulator untouched, for isolating issues.
+      if (window.NYJAH_DISABLE || /[?&]nonyjah\b/.test(location.search)) {
+        console.log('[NyjahInjector] disabled via flag — stock emulator.');
+        return;
+      }
       dv = new DataView(Module.wasmMemory.buffer);
       // Hook the frame pump: wrap _runMainLoop so we run after every emulated
       // frame. RDRAM is located lazily inside apply() once the ROM has booted.
