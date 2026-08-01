@@ -411,46 +411,39 @@ class InputController {
                     try {
                         let horiz_axis = gp.axes[0];
                         let vertical_axis = gp.axes[1];
-                        if (horiz_axis < -.5) {
-                            if (!this.Key_Left) {
-                                this.sendKeyDownEvent(this.KeyMappings.Mapping_Left);
+                        // D-pad: standard gamepad mapping reports it as buttons
+                        // 12(up)/13(down)/14(left)/15(right). Some pads instead
+                        // report it as a hat on axes[9]. Support both, and OR it
+                        // with the analog stick so either drives movement.
+                        let btn = gp.buttons;
+                        let dUp    = btn.length > 12 && btn[12].pressed;
+                        let dDown  = btn.length > 13 && btn[13].pressed;
+                        let dLeft  = btn.length > 14 && btn[14].pressed;
+                        let dRight = btn.length > 15 && btn[15].pressed;
+                        if (gp.axes.length > 9) {           // hat-switch fallback
+                            let h = gp.axes[9];
+                            if (h >= -1.01 && h <= 1.01) {
+                                if (h < -0.9 || h > 0.9) dUp = true;              // up / up-left wrap
+                                if (h > -0.8 && h < -0.2) dRight = true;          // up-right..right
+                                if (h > -0.6 && h < 0.0) { dUp = true; }
+                                if (h > -0.2 && h < 0.4) dRight = true;           // right..down-right
+                                if (h > 0.1 && h < 0.6) dDown = true;             // down-right..down
+                                if (h > 0.4 && h < 0.9) dLeft = true;             // down-left..left
+                                if (h > 0.7 && h <= 1.01) { dUp = true; dLeft = true; }
                             }
                         }
-                        else {
-                            if (this.Key_Left) {
-                                this.sendKeyUpEvent(this.KeyMappings.Mapping_Left);
-                            }
-                        }
-                        if (horiz_axis > .5) {
-                            if (!this.Key_Right) {
-                                this.sendKeyDownEvent(this.KeyMappings.Mapping_Right);
-                            }
-                        }
-                        else {
-                            if (this.Key_Right) {
-                                this.sendKeyUpEvent(this.KeyMappings.Mapping_Right);
-                            }
-                        }
-                        if (vertical_axis > .5) {
-                            if (!this.Key_Down) {
-                                this.sendKeyDownEvent(this.KeyMappings.Mapping_Down);
-                            }
-                        }
-                        else {
-                            if (this.Key_Down) {
-                                this.sendKeyUpEvent(this.KeyMappings.Mapping_Down);
-                            }
-                        }
-                        if (vertical_axis < -.5) {
-                            if (!this.Key_Up) {
-                                this.sendKeyDownEvent(this.KeyMappings.Mapping_Up);
-                            }
-                        }
-                        else {
-                            if (this.Key_Up) {
-                                this.sendKeyUpEvent(this.KeyMappings.Mapping_Up);
-                            }
-                        }
+                        let wantLeft  = (horiz_axis < -.5) || dLeft;
+                        let wantRight = (horiz_axis >  .5) || dRight;
+                        let wantDown  = (vertical_axis >  .5) || dDown;
+                        let wantUp    = (vertical_axis < -.5) || dUp;
+                        if (wantLeft && !this.Key_Left)  this.sendKeyDownEvent(this.KeyMappings.Mapping_Left);
+                        else if (!wantLeft && this.Key_Left)  this.sendKeyUpEvent(this.KeyMappings.Mapping_Left);
+                        if (wantRight && !this.Key_Right) this.sendKeyDownEvent(this.KeyMappings.Mapping_Right);
+                        else if (!wantRight && this.Key_Right) this.sendKeyUpEvent(this.KeyMappings.Mapping_Right);
+                        if (wantDown && !this.Key_Down)  this.sendKeyDownEvent(this.KeyMappings.Mapping_Down);
+                        else if (!wantDown && this.Key_Down)  this.sendKeyUpEvent(this.KeyMappings.Mapping_Down);
+                        if (wantUp && !this.Key_Up)      this.sendKeyDownEvent(this.KeyMappings.Mapping_Up);
+                        else if (!wantUp && this.Key_Up)      this.sendKeyUpEvent(this.KeyMappings.Mapping_Up);
                         // C-buttons on axes 2/3 (common for N64 USB adapters)
                         if (gp.axes.length > 2) {
                             let c_horiz = gp.axes[2];

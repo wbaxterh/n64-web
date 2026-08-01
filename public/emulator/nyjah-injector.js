@@ -66,21 +66,38 @@
     return 0;
   }
 
+  // On-screen status overlay so we can debug without the console.
+  var ovEl = null, ovN = 0;
+  function ov(msg) {
+    if (!ovEl) {
+      ovEl = document.createElement('div');
+      ovEl.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:99999;font:11px monospace;background:rgba(0,0,0,.7);color:#0f0;padding:4px 6px;border-radius:4px;white-space:pre;pointer-events:none';
+      document.body.appendChild(ovEl);
+    }
+    ovEl.textContent = 'NyjahInjector ' + msg;
+  }
+
   function apply(Module) {
     // Lazily locate RDRAM once the ROM has booted (chunked, non-blocking).
     if (!ready) {
       if (gaveUp) return;
-      if (++frames < 30) return;                 // let the IPL DMA the ROM in first
+      if (++frames < 30) { ov('waiting for ROM boot...'); return; }
       base = scanStep(Module);                    // bounded work this frame
       if (!base) {
-        if (frames > 3000) { gaveUp = true; console.warn('[NyjahInjector] RDRAM not found — idle.'); }
+        var pct = heap32 ? Math.floor(100 * scanCursor / heap32.length) : 0;
+        ov('searching RDRAM ' + pct + '%');
+        if (frames > 3000) { gaveUp = true; ov('RDRAM not found — idle'); console.warn('[NyjahInjector] RDRAM not found — idle.'); }
         return;
       }
-      console.log('[NyjahInjector] RDRAM located at heap offset 0x' + base.toString(16) + ' — cap active.');
+      console.log('[NyjahInjector] RDRAM located at heap offset 0x' + base.toString(16));
       ready = true;
     }
+    // Show the opcode byte at the head-DL address so we can tell when the
+    // skater is loaded (should read DA = G_MTX). 0x8022a2c8 is desktop-derived.
+    var headOp = r32(HEAD_START) >>> 24;
+    if ((ovN++ & 15) === 0) ov('RDRAM@0x' + base.toString(16) + '  head[0x8022a2c8]=0x' + headOp.toString(16) + (headOp === 0xda ? ' SKATER ✓ cap on' : ' (no skater)'));
     // Only act when THPS's skater is present: head DL starts with G_MTX (0xDA).
-    if ((r32(HEAD_START) >>> 24) !== 0xda) return;
+    if (headOp !== 0xda) return;
 
     var survived = r32(CANARY) === CANARY_VAL;
 
