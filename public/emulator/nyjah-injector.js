@@ -23,7 +23,12 @@
   var capVerts = [4292870074,4292345856,0,3958107135,2228154,4292345856,0,3958107135,2228154,786432,0,3958107135,4292870074,786432,0,3958107135,4293394344,4292870144,0,3958107135,1703848,4292870144,0,3958107135,1703848,262144,0,3958107135,4293394344,262144,0,3958107135,4293001148,786432,0,3958107135,2097084,786432,0,3958107135,1966013,3014656,0,3958107135,4293132221,3014656,0,3958107135];
   var capSubDL = [16826392,2151677952,100663818,657408,100795404,788994,100926990,920580,101056520,527878,101190156,790024,101716500,1316368,3741319168,0];
 
-  var dv = null, base = 0, ready = false, lastOK = false, warned = false;
+  var dv = null, heap32 = null, base = 0, ready = false, lastOK = false, warned = false;
+
+  // MIPS boot code from ROM 0x1000, which the IPL copies to RDRAM 0x400.
+  // Distinctive enough to locate g_rdram in the 512MB WASM heap. Value-correct
+  // big-endian words, i.e. what Uint32Array reads directly.
+  var BOOT_SIG = [0x3c1d803f, 0x37bdfff0, 0x3c088001, 0x25082f10, 0x3c098001, 0x25296ac0, 0x11090005];
 
   // N64 KSEG0 vaddr -> heap byte offset. RDRAM is 8MB; strip the segment bits.
   function P(vaddr) { return base + (vaddr & 0x1fffffff); }
@@ -32,17 +37,40 @@
   function r32(a) { return dv.getUint32(P(a), true) >>> 0; }
   function w32(a, v) { dv.setUint32(P(a), v >>> 0, true); }
 
+  // Preferred: exported accessor (needs the n64-wasm rebuild). Fallback: scan
+  // the heap for the boot signature — works with the STOCK wasm, no rebuild.
   function locateRdram(Module) {
     if (typeof Module._neilGetRdramBase === 'function') {
-      return Module._neilGetRdramBase() >>> 0;
+      var b = Module._neilGetRdramBase() >>> 0;
+      if (b) return b;
     }
-    // Fallback: scan the heap for the head-DL G_MTX signature once the ROM has
-    // DMA'd in. (Preferred path is the exported accessor after a rebuild.)
-    return 0;
+    if (!heap32) heap32 = new Uint32Array(Module.wasmMemory.buffer);
+    var n = heap32.length - BOOT_SIG.length, s0 = BOOT_SIG[0] >>> 0;
+    for (var i = 0; i < n; i++) {
+      if (heap32[i] === s0) {
+        var ok = true;
+        for (var k = 1; k < BOOT_SIG.length; k++) {
+          if (heap32[i + k] !== (BOOT_SIG[k] >>> 0)) { ok = false; break; }
+        }
+        if (ok) return (i * 4 - 0x400) >>> 0;   // boot sig sits at RDRAM 0x400
+      }
+    }
+    return 0; // ROM not booted into RDRAM yet — retry next frame
   }
 
-  function apply() {
-    if (!ready) return;
+  var frames = 0, scanTries = 0;
+
+  function apply(Module) {
+    // Lazily locate RDRAM once the ROM has booted into it (retry each frame).
+    if (!ready) {
+      if (++frames < 8) return;                 // let the IPL DMA the ROM in
+      if (scanTries > 600) return;              // give up after ~10s of frames
+      scanTries++;
+      base = locateRdram(Module);
+      if (!base) return;
+      console.log('[NyjahInjector] RDRAM located at heap offset 0x' + base.toString(16) + ' — cap active.');
+      ready = true;
+    }
     // Only act when THPS's skater is present: head DL starts with G_MTX (0xDA).
     if ((r32(HEAD_START) >>> 24) !== 0xda) return;
 
@@ -67,22 +95,16 @@
 
   function install(Module) {
     try {
-      base = locateRdram(Module);
-      if (!base) {
-        if (!warned) { console.warn('[NyjahInjector] no RDRAM base (rebuild n64-wasm with _neilGetRdramBase). Injector idle.'); warned = true; }
-        return;
-      }
       dv = new DataView(Module.wasmMemory.buffer);
-      ready = true;
-
-      // Hook the frame pump: wrap _runMainLoop so we run after every emulated frame.
+      // Hook the frame pump: wrap _runMainLoop so we run after every emulated
+      // frame. RDRAM is located lazily inside apply() once the ROM has booted.
       var orig = Module._runMainLoop;
       Module._runMainLoop = function () {
         var res = orig.apply(this, arguments);
-        try { apply(); } catch (e) { /* never let injection break the frame */ }
+        try { apply(Module); } catch (e) { /* never let injection break the frame */ }
         return res;
       };
-      console.log('[NyjahInjector] installed — cap injector active. RDRAM base 0x' + base.toString(16));
+      console.log('[NyjahInjector] installed — locating RDRAM once the ROM boots...');
     } catch (e) {
       console.error('[NyjahInjector] install failed:', e);
     }
