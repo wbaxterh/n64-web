@@ -239,6 +239,7 @@ class MyClass {
             await this.LoadSram();
             Module.callMain(['custom.v64']);
             this.initAudio(); // init after callMain so Module.HEAP16 is available
+            if (window.NyjahInjector) window.NyjahInjector.install(Module); // browser reskin injector (M1)
             this.findInDatabase();
             this.configureEmulator();
             $('#canvasDiv').show();
